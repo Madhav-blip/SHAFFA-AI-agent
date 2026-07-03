@@ -1,36 +1,69 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# J.A.R.V.I.S — Personal AI Operating System
 
-## Getting Started
+A cinematic, HUD-style AI operating system for productivity, developer workflows, and personal life management. Not a chatbot — a full-screen command center with live widgets, an animated AI core, a developer console, and an autonomous agent architecture.
 
-First, run the development server:
+## Quick start
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+npm run dev        # → http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+The UI is fully interactive out of the box with a local command engine and rich sample data — no backend or API keys required. The reference backend lives in `server/` (Express + MongoDB + Anthropic tool-calling) and powers the same intents in production.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Try these in the command bar (press `/` to focus it, or click the mic):
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- `morning briefing` · `what is due today` · `system status`
+- `add task: revise dp patterns` · `complete dbms`
+- `start focus 50` · `remember that demo day is friday`
+- `open console`, then click **Debug error** to watch the SQL debugging workflow
 
-## Learn More
+## Screens
 
-To learn more about Next.js, take a look at the following resources:
+| Route | Screen |
+| --- | --- |
+| `/` | Dashboard — AI core, today overview, deadlines, focus timer, productivity, insights |
+| `/memory` | Memory engine — semantic search, edit/delete, AI-linked connections, recall strength |
+| `/tasks` | Task grid — kanban ⇄ list toggle, drag-and-drop, priorities, recurring, completion FX |
+| `/goals` | Goal tracker — progress rings, streaks, milestone timelines, predictive ETAs |
+| `/console` | Developer console — file tree, terminal, explain/debug/generate, SQL root-cause flow |
+| `/automation` | Automation center — triggers, schedules, run-now, execution history |
+| `/analytics` | Analytics — focus/coding/productivity charts, consistency heatmap, AI insights |
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Architecture
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```
+src/
+  app/                  # one route per screen (App Router, client screens)
+  components/
+    shell/              # TopBar · Sidebar · RightPanel · CommandBar · Particles
+    core/AICore.tsx     # animated core: idle / listening / processing / responding
+    ui/                 # glass primitives + custom SVG chart library
+    dashboard/ console/ # screen-specific widgets
+  lib/
+    types.ts            # shared domain types
+    data/seed.ts        # sample data + demo project
+    ai/engine.ts        # local intent engine (nav, tasks, focus, briefing, debug…)
+    store/              # zustand: jarvis · tasks · memory · goals · automations · focus
 
-## Deploy on Vercel
+server/                 # reference backend (Express + MongoDB)
+  src/routes.ts         # REST + /api/ai/command (RAG + tool loop)
+  src/models.ts         # mongoose schemas incl. memory embeddings
+  src/services/
+    memoryEngine.ts     # embed → vector search → nightly consolidation/decay
+    agents.ts           # planner/coding/research/automation via Anthropic tool calling
+    voicePipeline.ts    # wake word → STT → reasoning → tools → TTS
+    pcAutomation.ts     # allowlisted app/file/command/system actions
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+### Voice pipeline
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Wake word → STT → AI reasoning → tool execution → TTS. The web client uses the browser `SpeechRecognition` / `speechSynthesis` APIs as a zero-dependency fallback (mic button in the command bar; enable spoken replies in Settings). The production path is documented in `server/src/services/voicePipeline.ts`.
+
+### AI flow
+
+Every command goes through: intent match in `lib/ai/engine.ts` (instant, offline) → in production, unresolved input escalates to `/api/ai/command`, which retrieves memories (RAG), runs a Claude tool-calling loop against the task/goal/automation/PC tools, and logs the full trace.
+
+## Stack
+
+Next.js 16 · TypeScript · Tailwind CSS 4 · Framer Motion · Zustand · Express · MongoDB (Atlas Vector Search) · Anthropic SDK
