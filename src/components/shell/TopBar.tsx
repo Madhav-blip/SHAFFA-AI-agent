@@ -60,6 +60,10 @@ export default function TopBar() {
   const dismissNotification = useJarvisStore((s) => s.dismissNotification);
   const voiceOutput = useJarvisStore((s) => s.voiceOutput);
   const setVoiceOutput = useJarvisStore((s) => s.setVoiceOutput);
+  const wakeEnabled = useJarvisStore((s) => s.wakeEnabled);
+  const setWakeEnabled = useJarvisStore((s) => s.setWakeEnabled);
+  const wakeWord = useJarvisStore((s) => s.wakeWord);
+  const setWakeWord = useJarvisStore((s) => s.setWakeWord);
 
   const [open, setOpen] = useState<"none" | "bell" | "settings">("none");
   const unread = notifications.filter((n) => !n.read).length;
@@ -168,6 +172,28 @@ export default function TopBar() {
                     </div>
                     <NeonSwitch on={voiceOutput} onToggle={() => setVoiceOutput(!voiceOutput)} />
                   </div>
+
+                  <div className="mt-3 flex items-center justify-between border-t border-line/60 pt-3">
+                    <div>
+                      <div className="text-[14px] font-semibold text-cyan-100">Wake word</div>
+                      <div className="text-[12px] text-dim">Always listen for the wake phrase</div>
+                    </div>
+                    <NeonSwitch on={wakeEnabled} onToggle={() => setWakeEnabled(!wakeEnabled)} />
+                  </div>
+                  <div className="mt-2 flex items-center gap-2">
+                    <span className="text-[12.5px] text-dim">hey</span>
+                    <input
+                      value={wakeWord}
+                      onChange={(e) => setWakeWord(e.target.value)}
+                      spellCheck={false}
+                      className="w-28 rounded-lg border border-line/70 bg-void/60 px-2.5 py-1 font-mono text-[13px] text-cyan-100 transition-all focus:border-cyan-400/50"
+                    />
+                    <span className="text-[11.5px] text-ghost">, morning briefing…</span>
+                  </div>
+                  <p className="mt-1.5 text-[11.5px] leading-snug text-ghost">
+                    Needs mic permission · Chrome/Edge · listens while the app is open. “jarvis” always works too.
+                  </p>
+
                   <div className="mt-4 border-t border-line/60 pt-3 text-[12px] leading-relaxed text-dim">
                     Core build <span className="text-cyan-300">v4.2.1</span> · local engine active · cloud reasoning link configured in{" "}
                     <span className="font-mono text-[11px]">server/.env</span>

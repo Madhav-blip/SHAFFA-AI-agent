@@ -38,7 +38,11 @@ function fmtDue(iso?: string): string {
 }
 
 export function processCommand(raw: string): EngineResult {
-  const input = raw.trim();
+  let input = raw.trim();
+  // Strip a leading wake phrase ("hey shaffa …", "jarvis, …") so the rest
+  // resolves as a normal command; a bare greeting is kept as-is.
+  const wake = input.match(/^(?:hey|ok|okay)?[\s,]*(?:jarvis|shaffa)\b[\s,!.]*/i);
+  if (wake && wake[0].length < input.length) input = input.slice(wake[0].length);
   const lower = input.toLowerCase();
 
   /* -- navigation ------------------------------------------------- */
@@ -192,7 +196,7 @@ export function processCommand(raw: string): EngineResult {
   }
 
   /* -- greetings / fallback ------------------------------------------ */
-  if (/^(hi|hello|hey|yo|jarvis)\b/.test(lower)) {
+  if (/^(hi|hello|hey|yo|jarvis|shaffa)\b/.test(lower)) {
     return {
       text: "At your service, sir. Four items sit inside the 24-hour window and your DSA streak needs attention tonight. Where shall we begin?",
       spoken: "At your service.",

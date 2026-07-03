@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { persist } from "zustand/middleware";
 import type { AppNotification, ChatMessage, CommandLogEntry, CoreState } from "@/lib/types";
 import { seedCommands, seedNotifications, uid } from "@/lib/data/seed";
 import { processCommand } from "@/lib/ai/engine";
@@ -12,8 +13,13 @@ interface JarvisState {
   notifications: AppNotification[];
   commandLog: CommandLogEntry[];
   voiceOutput: boolean;
+  /** hands-free wake word mode ("Hey Shaffa …") */
+  wakeEnabled: boolean;
+  wakeWord: string;
   setCoreState: (s: CoreState) => void;
   setVoiceOutput: (v: boolean) => void;
+  setWakeEnabled: (v: boolean) => void;
+  setWakeWord: (w: string) => void;
   markAllRead: () => void;
   dismissNotification: (id: string) => void;
   submitCommand: (text: string, onNav?: (path: string) => void) => void;
@@ -26,7 +32,9 @@ const GREETING: ChatMessage = {
   time: new Date().toISOString(),
 };
 
-export const useJarvisStore = create<JarvisState>((set, get) => ({
+export const useJarvisStore = create<JarvisState>()(
+  persist(
+    (set, get) => ({
   coreState: "idle",
   messages: [GREETING],
   streamText: "",
@@ -34,9 +42,13 @@ export const useJarvisStore = create<JarvisState>((set, get) => ({
   notifications: seedNotifications,
   commandLog: seedCommands,
   voiceOutput: false,
+  wakeEnabled: false,
+  wakeWord: "shaffa",
 
   setCoreState: (coreState) => set({ coreState }),
   setVoiceOutput: (voiceOutput) => set({ voiceOutput }),
+  setWakeEnabled: (wakeEnabled) => set({ wakeEnabled }),
+  setWakeWord: (wakeWord) => set({ wakeWord: wakeWord.toLowerCase().replace(/[^a-z ]/g, "") }),
   markAllRead: () =>
     set((s) => ({ notifications: s.notifications.map((n) => ({ ...n, read: true })) })),
   dismissNotification: (id) =>
@@ -86,4 +98,10 @@ export const useJarvisStore = create<JarvisState>((set, get) => ({
       }, 26);
     }, 750 + Math.random() * 550);
   },
-}));
+    }),
+    {
+      name: "jarvis-settings",
+      partialize: (s) => ({ voiceOutput: s.voiceOutput, wakeEnabled: s.wakeEnabled, wakeWord: s.wakeWord }),
+    },
+  ),
+);

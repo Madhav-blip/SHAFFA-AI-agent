@@ -7,6 +7,9 @@ interface AutomationState {
   /** id currently mid "run now" simulation */
   runningId: string | null;
   toggle: (id: string) => void;
+  update: (id: string, patch: Partial<Pick<Automation, "name" | "trigger" | "schedule">>) => void;
+  add: (automation: Automation) => void;
+  remove: (id: string) => void;
   runNow: (id: string) => void;
 }
 
@@ -17,6 +20,12 @@ export const useAutomationStore = create<AutomationState>((set) => ({
     set((s) => ({
       automations: s.automations.map((a) => (a.id === id ? { ...a, enabled: !a.enabled } : a)),
     })),
+  update: (id, patch) =>
+    set((s) => ({
+      automations: s.automations.map((a) => (a.id === id ? { ...a, ...patch } : a)),
+    })),
+  add: (automation) => set((s) => ({ automations: [automation, ...s.automations] })),
+  remove: (id) => set((s) => ({ automations: s.automations.filter((a) => a.id !== id) })),
   runNow: (id) => {
     set({ runningId: id });
     setTimeout(() => {
