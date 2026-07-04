@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { Ear, Mic, Send, Zap } from "lucide-react";
 import { useJarvisStore } from "@/lib/store/jarvis";
+import { speak } from "@/lib/voice";
 
 const SHORTCUTS = [
   "morning briefing",
@@ -35,7 +36,71 @@ function getRecognitionCtor(): (new () => SpeechRecognitionLike) | undefined {
   return w.SpeechRecognition ?? w.webkitSpeechRecognition;
 }
 
-const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+function levenshtein(a: string, b: string): number {
+  if (a === b) return 0;
+  const m = a.length;
+  const n = b.length;
+  if (m === 0) return n;
+  if (n === 0) return m;
+  let prev = Array.from({ length: n + 1 }, (_, j) => j);
+  for (let i = 1; i <= m; i++) {
+    const curr = [i];
+    for (let j = 1; j <= n; j++) {
+      curr[j] = Math.min(
+        prev[j] + 1,
+        curr[j - 1] + 1,
+        prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1),
+      );
+    }
+    prev = curr;
+  }
+  return prev[n];
+}
+
+/** Realistic STT mishearings of "shaffa" — speech engines rarely spell a
+ * made-up name literally; they snap to nearby real words. */
+const SHAFFA_VARIANTS = [
+  "shaffa", "shafa", "shava", "sofa", "sofia", "sophia", "shofa", "shaefa",
+  "shaffer", "shafer", "chaffa",
+];
+
+/**
+ * Edit-distance budget for a candidate token. Distance 2 is allowed only
+ * when the token already sounds like a wake attempt (sh/ch/j onset, vowel
+ * ending, same first letter as the target); everyday words ("shift",
+ * "staff", "shall", "save", "java") stay at distance 1, which none survive.
+ */
+function tolerance(token: string, target: string): number {
+  if (token.length < 4) return 0;
+  return /^(sh|ch|j)/.test(token) && /[aeiou]$/.test(token) && token[0] === target[0] ? 2 : 1;
+}
+
+/**
+ * Fuzzy wake-word search: match each transcript token (and adjacent-token
+ * pairs, for splits like "sha fa") against the wake word and its variants;
+ * everything after the hit is the command.
+ */
+function matchWake(transcript: string, wakeWord: string): { command: string } | null {
+  const words = transcript.toLowerCase().replace(/[^a-z\s]/g, " ").split(/\s+/).filter(Boolean);
+  const targets = [
+    ...(wakeWord === "shaffa" ? SHAFFA_VARIANTS : [wakeWord]),
+    "jarvis",
+  ];
+  for (let i = 0; i < words.length; i++) {
+    const word = words[i];
+    const pair = i + 1 < words.length ? word + words[i + 1] : null;
+    for (const target of targets) {
+      if (levenshtein(word, target) <= tolerance(word, target)) {
+        return { command: words.slice(i + 1).join(" ") };
+      }
+      // Pair-join only against long targets so "so far" can't become "sofa".
+      if (pair && target.length >= 6 && levenshtein(pair, target) <= tolerance(pair, target)) {
+        return { command: words.slice(i + 2).join(" ") };
+      }
+    }
+  }
+  return null;
+}
 
 export default function CommandBar() {
   const router = useRouter();
@@ -90,6 +155,11 @@ export default function CommandBar() {
     if (useJarvisStore.getState().coreState === "listening") setCoreState("idle");
   };
 
+  /** Spoken acknowledgement when SHAFFA wakes via voice or clap. */
+  const greet = () => {
+    if (useJarvisStore.getState().voiceOutput) speak("Hello boss.");
+  };
+
   /* ---------- Wake mode: background speech recognition + clap trigger ---------- */
   useEffect(() => {
     if (!wakeEnabled) return;
@@ -110,11 +180,6 @@ export default function CommandBar() {
     const startRecognition = () => {
       const Ctor = getRecognitionCtor();
       if (!Ctor) return;
-      const wakeRegex = new RegExp(
-        `\\b(?:hey\\s+|ok\\s+|okay\\s+)?(?:${escapeRegExp(wakeWord.trim() || "shaffa")}|jarvis)\\b`,
-        "i",
-      );
-
       rec = new Ctor();
       rec.lang = "en-IN";
       rec.continuous = true;
@@ -130,16 +195,21 @@ export default function CommandBar() {
         // response aloud (avoids capturing its own TTS output).
         if (state === "processing" || state === "responding" || speaking()) return;
 
-        const m = transcript.match(wakeRegex);
-        if (m) {
-          const command = transcript.slice((m.index ?? 0) + m[0].length).replace(/^[\s,!.]+/, "");
-          if (command) {
+        const hit = matchWake(transcript, wakeWord.trim().toLowerCase() || "shaffa");
+        if (process.env.NODE_ENV !== "production") {
+          console.debug("[shaffa stt]", transcript, hit ? "→ wake" : "");
+        }
+        if (hit) {
+          if (hit.command) {
             disarmAwait();
-            run(command);
+            run(hit.command);
           } else {
             armAwait(); // bare "hey shaffa" — wait for the follow-up
+            greet();
           }
         } else if (awaitingRef.current) {
+          // Drop the echo of SHAFFA's own greeting if the mic caught it.
+          if (transcript.toLowerCase().includes("hello boss")) return;
           disarmAwait();
           run(transcript);
         }
@@ -193,7 +263,10 @@ export default function CommandBar() {
             claps.push(now);
             if (claps.length >= 3) {
               claps = [];
-              if (useJarvisStore.getState().coreState === "idle") armAwait();
+              if (useJarvisStore.getState().coreState === "idle") {
+                armAwait();
+                greet();
+              }
             }
           }
           raf = requestAnimationFrame(tick);

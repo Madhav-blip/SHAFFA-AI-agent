@@ -3,6 +3,7 @@ import { persist } from "zustand/middleware";
 import type { AppNotification, ChatMessage, CommandLogEntry, CoreState } from "@/lib/types";
 import { seedCommands, seedNotifications, uid } from "@/lib/data/seed";
 import { processCommand } from "@/lib/ai/engine";
+import { speak } from "@/lib/voice";
 
 interface JarvisState {
   coreState: CoreState;
@@ -88,14 +89,8 @@ export const useJarvisStore = create<JarvisState>()(
               ...s.commandLog,
             ].slice(0, 20),
           }));
-          if (get().voiceOutput && typeof window !== "undefined" && "speechSynthesis" in window) {
-            // Read the full response aloud — SHAFFA is heard, not just seen.
-            window.speechSynthesis.cancel();
-            const utterance = new SpeechSynthesisUtterance(result.text.replace(/\s+/g, " ").trim());
-            utterance.rate = 1.04;
-            utterance.pitch = 0.92;
-            window.speechSynthesis.speak(utterance);
-          }
+          // Read the full response aloud — SHAFFA is heard, not just seen.
+          if (get().voiceOutput) speak(result.text);
         }
       }, 26);
     }, 750 + Math.random() * 550);
