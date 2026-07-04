@@ -45,7 +45,7 @@ function Logo() {
       </div>
       <div className="leading-none">
         <div className="font-display text-[17px] font-semibold tracking-[0.34em] text-cyan-100" style={{ textShadow: "0 0 18px rgba(0,229,255,0.5)" }}>
-          J.A.R.V.I.S
+          S.H.A.F.F.A
         </div>
         <div className="hud-label mt-1">Personal AI Operating System</div>
       </div>

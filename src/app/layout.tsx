@@ -20,7 +20,7 @@ const jetmono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "J.A.R.V.I.S — Personal AI Operating System",
+  title: "S.H.A.F.F.A — Personal AI Operating System",
   description:
     "A futuristic AI operating system for productivity, developer workflows, and personal life management.",
 };

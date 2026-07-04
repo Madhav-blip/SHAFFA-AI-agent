@@ -148,7 +148,7 @@ export default function MemoryScreen() {
           <p className="mt-1 text-[13px] text-dim">{memories.length} memories indexed · vector store synced · connections rebuilt nightly</p>
         </div>
         <button
-          onClick={() => addMemory({ id: uid(), type: "note", title: "New memory", content: "Describe what JARVIS should remember…", tags: ["new"], connections: [], strength: 0.5, updatedAt: new Date().toISOString() })}
+          onClick={() => addMemory({ id: uid(), type: "note", title: "New memory", content: "Describe what SHAFFA should remember…", tags: ["new"], connections: [], strength: 0.5, updatedAt: new Date().toISOString() })}
           className="flex cursor-pointer items-center gap-2 rounded-lg border border-cyan-400/50 bg-cyan-400/10 px-3.5 py-2 text-[13px] text-cyan-100 transition-all hover:bg-cyan-400/20 hover:shadow-[0_0_16px_rgba(0,229,255,0.3)]"
         >
           <Plus size={14} /> Add memory

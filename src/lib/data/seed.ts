@@ -272,7 +272,7 @@ export const sampleProject: FileNode = {
         { name: "register.sql", path: "alumni-system/src/register.sql", type: "file", language: "sql", content: registerSql },
       ],
     },
-    { name: ".env", path: "alumni-system/.env", type: "file", language: "env", content: "DATABASE_URL=postgres://jarvis:•••@localhost:5432/alumni\nPORT=4000\n" },
+    { name: ".env", path: "alumni-system/.env", type: "file", language: "env", content: "DATABASE_URL=postgres://shaffa:•••@localhost:5432/alumni\nPORT=4000\n" },
     { name: "package.json", path: "alumni-system/package.json", type: "file", language: "json", content: `{\n  "name": "alumni-system",\n  "scripts": {\n    "dev": "tsx watch src/index.ts",\n    "test": "vitest run"\n  }\n}\n` },
   ],
 };
@@ -286,10 +286,10 @@ QUERY:  INSERT INTO registrations (event_id, user_id, created_at)
 CONTEXT: PL/pgSQL, POST /api/events/42/register → 500`;
 
 export const seedTerminal: string[] = [
-  "jarvis@core:~/dev/alumni-system$ npm run test",
+  "shaffa@core:~/dev/alumni-system$ npm run test",
   "  ✓ users.test.ts (6 tests) 412ms",
   "  ✗ events.test.ts (4 tests | 2 failed) 883ms",
   "    → POST /register returns 500 — expected 201",
-  "jarvis@core:~/dev/alumni-system$ tail -1 logs/api.log",
+  "shaffa@core:~/dev/alumni-system$ tail -1 logs/api.log",
   '  ERROR: column reference "event_id" is ambiguous',
 ];

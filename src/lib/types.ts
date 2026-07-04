@@ -1,4 +1,4 @@
-/* ---------- Core domain types shared across JARVIS ---------- */
+/* ---------- Core domain types shared across S.H.A.F.F.A ---------- */
 
 export type CoreState = "idle" | "listening" | "processing" | "responding";
 

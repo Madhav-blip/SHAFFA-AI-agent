@@ -127,7 +127,7 @@ function Tree({ node, depth, selected, onSelect }: {
 function lineColor(l: string): string {
   if (l.includes("✗") || l.includes("ERROR")) return "text-rose-300";
   if (l.includes("✓")) return "text-emerald-300";
-  if (l.startsWith("jarvis@core")) return "text-cyan-300/90";
+  if (l.startsWith("shaffa@core")) return "text-cyan-300/90";
   return "text-icy/75";
 }
 
@@ -148,7 +148,7 @@ function Terminal({ extraLines }: { extraLines: string[] }) {
     const cmd = input.trim();
     if (!cmd) return;
     setInput("");
-    const prompt = `jarvis@core:~/dev/alumni-system$ ${cmd}`;
+    const prompt = `shaffa@core:~/dev/alumni-system$ ${cmd}`;
     if (cmd === "clear") return setLines([]);
     const out: Record<string, string[]> = {
       help: ["  commands: ls · npm run test · cat register.sql · clear · help"],
@@ -156,7 +156,7 @@ function Terminal({ extraLines }: { extraLines: string[] }) {
       "npm run test": ["  ✓ users.test.ts (6 tests) 398ms", "  ✗ events.test.ts (4 tests | 2 failed) 901ms", "    → POST /register returns 500 — expected 201"],
       "cat register.sql": ["  INSERT INTO registrations … JOIN registrations ON event_id = e.id  ← line 4"],
     };
-    setLines((l) => [...l, prompt, ...(out[cmd] ?? [`  jarvis: unknown command “${cmd}” — try help`])]);
+    setLines((l) => [...l, prompt, ...(out[cmd] ?? [`  shaffa: unknown command “${cmd}” — try help`])]);
   };
 
   return (
@@ -242,7 +242,7 @@ export default function ConsoleScreen() {
   const applyFix = () => {
     setApplied(true);
     setTerminalExtra([
-      "jarvis@core:~/dev/alumni-system$ jarvis apply-fix src/register.sql",
+      "shaffa@core:~/dev/alumni-system$ shaffa apply-fix src/register.sql",
       "  ✓ patch applied — removed redundant join, qualified event_id",
       "  ✓ events.test.ts (4 tests) 764ms — all passing",
     ]);

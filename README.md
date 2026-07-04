@@ -1,4 +1,4 @@
-# J.A.R.V.I.S — Personal AI Operating System
+# S.H.A.F.F.A — Personal AI Operating System
 
 A cinematic, HUD-style AI operating system for productivity, developer workflows, and personal life management. Not a chatbot — a full-screen command center with live widgets, an animated AI core, a developer console, and an autonomous agent architecture.
 

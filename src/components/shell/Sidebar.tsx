@@ -76,7 +76,7 @@ export default function Sidebar() {
         <Meter label="CORE" base={34} />
         <Meter label="MEMORY" base={58} />
         <Meter label="AGENTS" base={22} />
-        <div className="hud-label hidden text-center !text-[9px] lg:block">JARVIS CORE v4.2.1</div>
+        <div className="hud-label hidden text-center !text-[9px] lg:block">SHAFFA CORE v4.2.1</div>
       </div>
     </aside>
   );

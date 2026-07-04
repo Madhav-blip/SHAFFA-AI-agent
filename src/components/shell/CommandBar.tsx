@@ -114,7 +114,7 @@ export default function CommandBar() {
       if (!transcript) return;
 
       const state = useJarvisStore.getState().coreState;
-      // Ignore anything heard while JARVIS is thinking or speaking (avoids
+      // Ignore anything heard while SHAFFA is thinking or speaking (avoids
       // capturing its own TTS output).
       if (state === "processing" || state === "responding") return;
 
@@ -242,7 +242,7 @@ export default function CommandBar() {
                 ? "Listening…"
                 : wakeArmed
                   ? `Wake word armed — say “hey ${wakeWord}, morning briefing”, or type here   ( / to focus )`
-                  : "Command JARVIS — try “add task: …”, “start focus 50”, or paste an error   ( / to focus )"
+                  : "Command SHAFFA — try “add task: …”, “start focus 50”, or paste an error   ( / to focus )"
             }
             className="min-w-0 flex-1 bg-transparent text-[14.5px] text-cyan-50 placeholder:text-ghost"
             spellCheck={false}
