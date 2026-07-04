@@ -44,7 +44,6 @@ export default function CommandBar() {
   const setCoreState = useJarvisStore((s) => s.setCoreState);
   const wakeEnabled = useJarvisStore((s) => s.wakeEnabled);
   const wakeWord = useJarvisStore((s) => s.wakeWord);
-  const setWakeEnabled = useJarvisStore((s) => s.setWakeEnabled);
 
   const [value, setValue] = useState("");
   const [mounted, setMounted] = useState(false);
@@ -91,70 +90,154 @@ export default function CommandBar() {
     if (useJarvisStore.getState().coreState === "listening") setCoreState("idle");
   };
 
-  /* ---------- Wake-word mode: continuous background recognition ---------- */
+  /* ---------- Wake mode: background speech recognition + clap trigger ---------- */
   useEffect(() => {
     if (!wakeEnabled) return;
-    const Ctor = getRecognitionCtor();
-    if (!Ctor) return;
 
-    const wakeRegex = new RegExp(
-      `\\b(?:hey\\s+|ok\\s+|okay\\s+)?(?:${escapeRegExp(wakeWord.trim() || "shaffa")}|jarvis)\\b`,
-      "i",
-    );
+    const speaking = () =>
+      "speechSynthesis" in window && window.speechSynthesis.speaking;
 
     let stopped = false;
-    const rec = new Ctor();
-    rec.lang = "en-IN";
-    rec.continuous = true;
-    rec.interimResults = false;
+    let started = false;
+    let rec: SpeechRecognitionLike | null = null;
+    let raf = 0;
+    let audioCtx: AudioContext | null = null;
+    let stream: MediaStream | null = null;
+    let claps: number[] = [];
+    let lastPeakAt = 0;
 
-    rec.onresult = (e) => {
-      const last = e.results[e.results.length - 1];
-      const transcript = (last?.[0]?.transcript ?? "").trim();
-      if (!transcript) return;
+    /* --- path 1: continuous recognition for "hey shaffa …" --- */
+    const startRecognition = () => {
+      const Ctor = getRecognitionCtor();
+      if (!Ctor) return;
+      const wakeRegex = new RegExp(
+        `\\b(?:hey\\s+|ok\\s+|okay\\s+)?(?:${escapeRegExp(wakeWord.trim() || "shaffa")}|jarvis)\\b`,
+        "i",
+      );
 
-      const state = useJarvisStore.getState().coreState;
-      // Ignore anything heard while SHAFFA is thinking or speaking (avoids
-      // capturing its own TTS output).
-      if (state === "processing" || state === "responding") return;
+      rec = new Ctor();
+      rec.lang = "en-IN";
+      rec.continuous = true;
+      rec.interimResults = false;
 
-      const m = transcript.match(wakeRegex);
-      if (m) {
-        const command = transcript.slice((m.index ?? 0) + m[0].length).replace(/^[\s,!.]+/, "");
-        if (command) {
+      rec.onresult = (e) => {
+        const last = e.results[e.results.length - 1];
+        const transcript = (last?.[0]?.transcript ?? "").trim();
+        if (!transcript) return;
+
+        const state = useJarvisStore.getState().coreState;
+        // Ignore anything heard while SHAFFA is thinking or reading a
+        // response aloud (avoids capturing its own TTS output).
+        if (state === "processing" || state === "responding" || speaking()) return;
+
+        const m = transcript.match(wakeRegex);
+        if (m) {
+          const command = transcript.slice((m.index ?? 0) + m[0].length).replace(/^[\s,!.]+/, "");
+          if (command) {
+            disarmAwait();
+            run(command);
+          } else {
+            armAwait(); // bare "hey shaffa" — wait for the follow-up
+          }
+        } else if (awaitingRef.current) {
           disarmAwait();
-          run(command);
-        } else {
-          armAwait(); // bare "hey shaffa" — wait for the follow-up
+          run(transcript);
         }
-      } else if (awaitingRef.current) {
-        disarmAwait();
-        run(transcript);
-      }
+      };
+
+      rec.onerror = (e) => {
+        if (e?.error === "not-allowed" || e?.error === "service-not-allowed") {
+          // Mic blocked: pause for this session only. Keep the setting ON so
+          // wake mode comes back the moment permission is granted.
+          stopped = true;
+          disarmAwait();
+        }
+      };
+      // Browsers stop continuous recognition after silence — restart quietly.
+      rec.onend = () => {
+        if (!stopped) {
+          try { rec?.start(); } catch { /* already restarting */ }
+        }
+      };
+
+      try { rec.start(); } catch { /* mic busy */ }
+      recRef.current = rec;
     };
 
-    rec.onerror = (e) => {
-      if (e?.error === "not-allowed" || e?.error === "service-not-allowed") {
-        stopped = true;
-        setWakeEnabled(false);
-        disarmAwait();
-      }
-    };
-    // Browsers stop continuous recognition after silence — restart quietly.
-    rec.onend = () => {
-      if (!stopped) {
-        try { rec.start(); } catch { /* already restarting */ }
-      }
+    /* --- path 2: triple-clap trigger (works without SpeechRecognition) --- */
+    const startClaps = async () => {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const w = window as unknown as { AudioContext?: typeof AudioContext; webkitAudioContext?: typeof AudioContext };
+        const Ctx = w.AudioContext ?? w.webkitAudioContext;
+        if (!Ctx || stopped) return;
+        audioCtx = new Ctx();
+        if (audioCtx.state === "suspended") audioCtx.resume().catch(() => {});
+        const analyser = audioCtx.createAnalyser();
+        analyser.fftSize = 1024;
+        audioCtx.createMediaStreamSource(stream).connect(analyser);
+        const buf = new Uint8Array(analyser.fftSize);
+
+        const tick = () => {
+          analyser.getByteTimeDomainData(buf);
+          let peak = 0;
+          for (let i = 0; i < buf.length; i++) {
+            const v = Math.abs(buf[i] - 128) / 128;
+            if (v > peak) peak = v;
+          }
+          const now = performance.now();
+          // A clap is a sharp, loud transient; three inside 1.8s arms SHAFFA.
+          if (peak > 0.6 && now - lastPeakAt > 150 && !speaking()) {
+            lastPeakAt = now;
+            claps = claps.filter((t) => now - t < 1800);
+            claps.push(now);
+            if (claps.length >= 3) {
+              claps = [];
+              if (useJarvisStore.getState().coreState === "idle") armAwait();
+            }
+          }
+          raf = requestAnimationFrame(tick);
+        };
+        raf = requestAnimationFrame(tick);
+      } catch { /* mic unavailable — clap trigger stays off */ }
     };
 
-    try { rec.start(); } catch { /* mic busy */ }
-    recRef.current = rec;
+    const startAll = () => {
+      if (started || stopped) return;
+      started = true;
+      startRecognition();
+      startClaps();
+    };
+
+    // Don't fire a permission prompt on page load — browsers suppress or
+    // penalize that. Start immediately only when the mic is already granted;
+    // otherwise arm on the first user gesture (which lets the prompt show).
+    const gestureStart = () => {
+      audioCtx?.resume().catch(() => {});
+      startAll();
+    };
+    window.addEventListener("pointerdown", gestureStart);
+
+    (async () => {
+      try {
+        const perm = navigator.permissions?.query
+          ? await navigator.permissions.query({ name: "microphone" as PermissionName })
+          : null;
+        if (!stopped && perm?.state === "granted") startAll();
+      } catch { /* Permissions API unavailable — wait for the gesture */ }
+    })();
 
     return () => {
       stopped = true;
-      rec.onend = null;
-      try { rec.stop(); } catch { /* already stopped */ }
+      window.removeEventListener("pointerdown", gestureStart);
+      if (rec) {
+        rec.onend = null;
+        try { rec.stop(); } catch { /* already stopped */ }
+      }
       recRef.current = null;
+      cancelAnimationFrame(raf);
+      stream?.getTracks().forEach((t) => t.stop());
+      audioCtx?.close().catch(() => {});
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wakeEnabled, wakeWord]);
@@ -209,7 +292,7 @@ export default function CommandBar() {
           <motion.button
             whileTap={{ scale: 0.92 }}
             onClick={toggleVoice}
-            title={wakeArmed ? `Wake word armed — say “hey ${wakeWord}”` : "Voice input"}
+            title={wakeArmed ? `Wake word armed — say “hey ${wakeWord}” or triple clap` : "Voice input"}
             className={`relative grid h-11 w-11 cursor-pointer place-items-center rounded-full border transition-all duration-300 ${
               listening
                 ? "border-emerald-300/70 bg-emerald-400/15 text-emerald-200 shadow-[0_0_22px_rgba(46,232,184,0.4)]"
@@ -241,7 +324,7 @@ export default function CommandBar() {
               listening
                 ? "Listening…"
                 : wakeArmed
-                  ? `Wake word armed — say “hey ${wakeWord}, morning briefing”, or type here   ( / to focus )`
+                  ? `Armed — say “hey ${wakeWord}, morning briefing” or triple clap, or type here   ( / to focus )`
                   : "Command SHAFFA — try “add task: …”, “start focus 50”, or paste an error   ( / to focus )"
             }
             className="min-w-0 flex-1 bg-transparent text-[14.5px] text-cyan-50 placeholder:text-ghost"
