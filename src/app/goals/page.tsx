@@ -1,11 +1,79 @@
 "use client";
 
-import { motion } from "framer-motion";
-import { CalendarClock, Flame, Plus, TrendingUp } from "lucide-react";
-import { GlassCard, PageTransition, PanelHeader } from "@/components/ui/primitives";
+import { useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
+import { CalendarClock, Flame, Plus, Target, Trash2, TrendingUp } from "lucide-react";
+import { GlassCard, PageTransition } from "@/components/ui/primitives";
 import { ProgressRing, Sparkline } from "@/components/ui/charts";
 import { projectedDate, useGoalStore, weeksToComplete } from "@/lib/store/goals";
+import { uid } from "@/lib/data/seed";
 import type { Goal } from "@/lib/types";
+
+const GOAL_COLORS = ["#00e5ff", "#f59e0b", "#a78bfa", "#34d399", "#fb7185"];
+
+function GoalCreator({ onClose }: { onClose: () => void }) {
+  const addGoal = useGoalStore((s) => s.addGoal);
+  const count = useGoalStore((s) => s.goals.length);
+  const [title, setTitle] = useState("");
+  const [target, setTarget] = useState("100");
+  const [unit, setUnit] = useState("units");
+  const [rate, setRate] = useState("5");
+
+  const create = () => {
+    const t = Math.max(1, parseInt(target, 10) || 100);
+    if (!title.trim()) return;
+    addGoal({
+      id: uid(),
+      title: title.trim(),
+      unit: unit.trim() || "units",
+      current: 0,
+      target: t,
+      weeklyRate: Math.max(0, parseInt(rate, 10) || 0),
+      streakDays: 0,
+      color: GOAL_COLORS[count % GOAL_COLORS.length],
+      milestones: [0.25, 0.5, 0.75, 1].map((f) => ({
+        label: f === 1 ? "Complete" : `${f * 100}%`,
+        at: Math.round(t * f),
+        done: false,
+      })),
+      history: [0],
+    });
+    onClose();
+  };
+
+  const field = "w-full rounded-lg border border-line/70 bg-void/60 px-2.5 py-1.5 text-[13.5px] text-cyan-50 transition-all focus:border-cyan-400/50";
+  return (
+    <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
+      <GlassCard hover={false} className="p-4">
+        <div className="hud-label mb-3 !text-cyan-200/70">New Objective</div>
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <label className="col-span-2 block">
+            <span className="hud-label !text-[9px]">Goal</span>
+            <input autoFocus value={title} onChange={(e) => setTitle(e.target.value)} onKeyDown={(e) => e.key === "Enter" && create()} placeholder="e.g. LeetCode problems solved" className={`mt-1 ${field}`} />
+          </label>
+          <label className="block">
+            <span className="hud-label !text-[9px]">Target</span>
+            <input value={target} onChange={(e) => setTarget(e.target.value)} inputMode="numeric" className={`mt-1 ${field}`} />
+          </label>
+          <label className="block">
+            <span className="hud-label !text-[9px]">Unit</span>
+            <input value={unit} onChange={(e) => setUnit(e.target.value)} placeholder="problems / % / sessions" className={`mt-1 ${field}`} />
+          </label>
+          <label className="block">
+            <span className="hud-label !text-[9px]">Expected per week</span>
+            <input value={rate} onChange={(e) => setRate(e.target.value)} inputMode="numeric" className={`mt-1 ${field}`} />
+          </label>
+        </div>
+        <div className="mt-3 flex gap-2">
+          <button onClick={create} disabled={!title.trim()} className="flex cursor-pointer items-center gap-2 rounded-lg border border-cyan-400/50 bg-cyan-400/10 px-4 py-1.5 text-[13px] text-cyan-100 transition-all hover:bg-cyan-400/20 hover:shadow-[0_0_16px_rgba(0,229,255,0.3)] disabled:opacity-40">
+            <Target size={13} /> Track it
+          </button>
+          <button onClick={onClose} className="chip">cancel</button>
+        </div>
+      </GlassCard>
+    </motion.div>
+  );
+}
 
 function MilestoneTimeline({ goal }: { goal: Goal }) {
   return (
@@ -45,6 +113,7 @@ function MilestoneTimeline({ goal }: { goal: Goal }) {
 
 function GoalCard({ goal, index }: { goal: Goal; index: number }) {
   const increment = useGoalStore((s) => s.increment);
+  const removeGoal = useGoalStore((s) => s.removeGoal);
   const pct = goal.current / goal.target;
   const weeks = weeksToComplete(goal);
   const eta = projectedDate(goal);
@@ -71,13 +140,22 @@ function GoalCard({ goal, index }: { goal: Goal; index: number }) {
                 <h3 className="text-[16.5px] font-semibold text-cyan-50">{goal.title}</h3>
                 <span className="text-[12px] tracking-wide text-dim">{goal.current} of {goal.target} {goal.unit}</span>
               </div>
-              <button
-                onClick={() => increment(goal.id, step)}
-                className="flex cursor-pointer items-center gap-1 rounded-lg border px-2.5 py-1 text-[12px] transition-all hover:shadow-[0_0_14px_rgba(0,229,255,0.2)]"
-                style={{ borderColor: `${goal.color}55`, color: goal.color, background: `${goal.color}0d` }}
-              >
-                <Plus size={12} /> log {step}
-              </button>
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={() => increment(goal.id, step)}
+                  className="flex cursor-pointer items-center gap-1 rounded-lg border px-2.5 py-1 text-[12px] transition-all hover:shadow-[0_0_14px_rgba(0,229,255,0.2)]"
+                  style={{ borderColor: `${goal.color}55`, color: goal.color, background: `${goal.color}0d` }}
+                >
+                  <Plus size={12} /> log {step}
+                </button>
+                <button
+                  onClick={() => removeGoal(goal.id)}
+                  className="grid h-7 w-7 cursor-pointer place-items-center rounded-lg border border-line text-ghost transition-all hover:border-rose-400/50 hover:text-rose-300"
+                  title="Delete goal"
+                >
+                  <Trash2 size={12} />
+                </button>
+              </div>
             </div>
 
             <div className="mt-2.5 flex flex-wrap items-center gap-2">
@@ -110,8 +188,8 @@ function GoalCard({ goal, index }: { goal: Goal; index: number }) {
 
 export default function GoalsScreen() {
   const goals = useGoalStore((s) => s.goals);
-  const avg = Math.round((goals.reduce((a, g) => a + g.current / g.target, 0) / goals.length) * 100);
-  const hottest = [...goals].sort((a, b) => b.streakDays - a.streakDays)[0];
+  const [creating, setCreating] = useState(false);
+  const avg = goals.length > 0 ? Math.round((goals.reduce((a, g) => a + g.current / g.target, 0) / goals.length) * 100) : 0;
 
   return (
     <PageTransition className="mx-auto flex max-w-6xl flex-col gap-4">
@@ -121,20 +199,37 @@ export default function GoalsScreen() {
             Goal Tracker
           </h1>
           <p className="mt-1 text-[13px] text-dim">
-            {goals.length} active objectives · {avg}% aggregate completion · longest streak: {hottest.title} ({hottest.streakDays}d)
+            {goals.length === 0
+              ? "No objectives yet — completion ETAs are projected from your real weekly velocity."
+              : `${goals.length} active objective${goals.length === 1 ? "" : "s"} · ${avg}% aggregate completion · ETAs update as you log progress`}
           </p>
         </div>
-        <GlassCard hover={false} className="px-4 py-2.5">
-          <PanelHeader title="Prediction Engine" />
-          <p className="-mt-2 max-w-md text-[12.5px] leading-relaxed text-dim">
-            Estimates use your trailing 7-week velocity. Restoring the DSA streak tonight pulls the LeetCode ETA forward by ~2 weeks.
-          </p>
-        </GlassCard>
+        <button
+          onClick={() => setCreating(!creating)}
+          className="flex cursor-pointer items-center gap-2 rounded-lg border border-cyan-400/50 bg-cyan-400/10 px-3.5 py-2 text-[13px] text-cyan-100 transition-all hover:bg-cyan-400/20 hover:shadow-[0_0_16px_rgba(0,229,255,0.3)]"
+        >
+          <Plus size={14} /> New goal
+        </button>
       </header>
 
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-        {goals.map((g, i) => <GoalCard key={g.id} goal={g} index={i} />)}
-      </div>
+      <AnimatePresence>{creating && <GoalCreator onClose={() => setCreating(false)} />}</AnimatePresence>
+
+      {goals.length === 0 && !creating ? (
+        <GlassCard hover={false} className="flex flex-col items-center gap-3 py-14">
+          <Target size={28} className="text-ghost" />
+          <p className="max-w-md text-center text-[14px] leading-relaxed text-dim">
+            Track anything measurable — problems solved, certification progress, applications sent, gym sessions.
+            SHAFFA charts velocity, milestones, and a predicted completion date from what you actually log.
+          </p>
+          <button onClick={() => setCreating(true)} className="chip !px-4 !py-1.5 !text-[13px]">
+            <Plus size={13} /> Create your first goal
+          </button>
+        </GlassCard>
+      ) : (
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+          {goals.map((g, i) => <GoalCard key={g.id} goal={g} index={i} />)}
+        </div>
+      )}
     </PageTransition>
   );
 }

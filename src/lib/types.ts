@@ -63,6 +63,18 @@ export interface AutomationRun {
   detail: string;
 }
 
+/** When an automation fires. */
+export type AutomationRule =
+  | { kind: "daily"; time: string } // "HH:MM"
+  | { kind: "interval"; minutes: number }
+  | { kind: "deadline"; withinHours: number };
+
+/** What an automation does when it fires. */
+export interface AutomationAction {
+  kind: "command" | "remind" | "focus";
+  payload: string;
+}
+
 export interface Automation {
   id: string;
   name: string;
@@ -73,6 +85,10 @@ export interface Automation {
   lastRun: string;
   successRate: number;
   history: AutomationRun[];
+  rule?: AutomationRule;
+  action?: AutomationAction;
+  lastFiredDay?: string;
+  lastFiredAt?: number;
 }
 
 export interface AppNotification {
@@ -125,4 +141,6 @@ export interface EngineResult {
   nav?: string;
   suggestions?: string[];
   spoken?: string;
+  /** no local intent matched — escalate to cloud reasoning (/api/ai) */
+  fallback?: boolean;
 }

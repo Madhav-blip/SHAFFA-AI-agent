@@ -177,6 +177,12 @@ export default function TasksScreen() {
         </div>
       </GlassCard>
 
+      {filtered.length === 0 && (
+        <div className="rounded-xl border border-dashed border-line/60 px-4 py-6 text-center text-[13.5px] text-ghost">
+          Empty board. Type in the quick-add above, say “hey shaffa, add task …”, or ask her to plan your day — she will create these herself.
+        </div>
+      )}
+
       {view === "kanban" ? (
         <div className="flex flex-col gap-4 lg:flex-row">
           {COLUMNS.map((c) => (

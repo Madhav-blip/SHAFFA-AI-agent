@@ -9,7 +9,13 @@ npm install
 npm run dev        # → http://localhost:3000
 ```
 
-The UI is fully interactive out of the box with a local command engine and rich sample data — no backend or API keys required. The reference backend lives in `server/` (Express + MongoDB + Anthropic tool-calling) and powers the same intents in production.
+The UI is fully interactive out of the box with a local command engine and rich sample data. To unlock full cloud reasoning — ask SHAFFA anything, and let Claude drive the app's own tools — put your API key in `.env.local`:
+
+```
+ANTHROPIC_API_KEY=sk-ant-…   # from console.anthropic.com/settings/keys
+```
+
+Local intents (tasks, focus, briefings, memory, navigation) run instantly and offline; anything else escalates to `/api/ai`, where Claude answers with your live app context (tasks, goals, memories) and can call SHAFFA's tools: create/complete tasks, store memories, start focus sessions, toggle automations, log goal progress, and navigate screens. Note: the API cannot use claude.ai's Gmail/Drive connectors — those are tied to the Claude app, not API keys; email/drive access needs its own Google OAuth integration (see `server/` for the intended architecture).
 
 Try these in the command bar (press `/` to focus it, or click the mic):
 
