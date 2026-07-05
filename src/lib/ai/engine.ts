@@ -111,32 +111,54 @@ export function processCommand(raw: string): EngineResult {
   }
 
   /* -- due today / briefing ---------------------------------------- */
-  if (/briefing|due today|what.*today|agenda/.test(lower)) {
+  if (/briefing|due today|agenda|what('s| is) due/.test(lower)) {
     const tasks = useTaskStore.getState().tasks.filter((t) => t.status !== "done");
     const dueSoon = tasks.filter((t) => t.due && new Date(t.due).getTime() - Date.now() < 86_400_000);
     const goals = useGoalStore.getState().goals;
-    const lc = goals.find((g) => g.id === "g1");
+    const parts: string[] = [];
+    if (dueSoon.length > 0) {
+      parts.push(
+        `${dueSoon.length} item${dueSoon.length === 1 ? "" : "s"} inside the 24-hour window: ` +
+          dueSoon.map((t) => `“${t.title}” (${fmtDue(t.due)})`).join("; ") + ".",
+      );
+    } else if (tasks.length > 0) {
+      parts.push(`Nothing due in the next 24 hours — ${tasks.length} open item${tasks.length === 1 ? "" : "s"} on the board overall.`);
+    } else {
+      parts.push("The board is clear — no open tasks.");
+    }
+    if (goals.length > 0) {
+      parts.push(
+        "Goals: " +
+          goals.map((g) => `${g.title} at ${Math.round((g.current / g.target) * 100)}%`).join(", ") + ".",
+      );
+    }
+    if (tasks.length === 0 && goals.length === 0) {
+      parts.push("Add tasks and goals — or just tell me what is on your plate — and these briefings get sharp.");
+    }
     return {
-      text:
-        `Briefing, sir. ${dueSoon.length} item${dueSoon.length === 1 ? "" : "s"} inside the 24-hour window: ` +
-        dueSoon.map((t) => `“${t.title}” (${fmtDue(t.due)})`).join("; ") +
-        `. LeetCode stands at ${lc?.current}/${lc?.target} with the streak broken for 4 days — tonight is the recovery window. ` +
-        `The Alumni System demo remains the highest-leverage deadline. Recommend: DSA block at 21:00, API fix before that.`,
-      spoken: `You have ${dueSoon.length} items due within twenty-four hours.`,
-      suggestions: ["start focus 50", "open console", "how are my goals"],
+      text: `Briefing, boss. ${parts.join(" ")}`,
+      spoken: dueSoon.length > 0 ? `You have ${dueSoon.length} items due within twenty-four hours.` : "Nothing urgent on the board.",
+      suggestions: ["start focus 50", "add task: plan my week", "how are my goals"],
     };
   }
 
   /* -- goals -------------------------------------------------------- */
-  if (/goal|leetcode|aws|progress/.test(lower)) {
+  if (/goal|leetcode|aws/.test(lower) && /\b(my|how|show|status|progress|track)\b/.test(lower)) {
     const goals = useGoalStore.getState().goals;
+    if (goals.length === 0) {
+      return {
+        text: "No goals tracked yet, boss. Open the Goals screen and create one — I will track your velocity and project a completion date from real progress.",
+        nav: "/goals",
+        suggestions: ["open goals", "morning briefing"],
+      };
+    }
     const lines = goals.map((g) => {
       const pct = Math.round((g.current / g.target) * 100);
-      const weeks = g.weeklyRate > 0 ? Math.ceil((g.target - g.current) / g.weeklyRate) : Infinity;
-      return `${g.title}: ${g.current}/${g.target} ${g.unit} (${pct}%) — projected completion in ~${weeks} weeks at current pace`;
+      const weeks = g.weeklyRate > 0 ? Math.ceil((g.target - g.current) / g.weeklyRate) : null;
+      return `${g.title}: ${g.current}/${g.target} ${g.unit} (${pct}%)${weeks !== null ? ` — ~${weeks} weeks to completion at current pace` : ""}`;
     });
     return {
-      text: `Goal telemetry:\n${lines.join("\n")}\nThe LeetCode trajectory slipped 12% this week. Restoring the nightly drill closes the gap by mid-August.`,
+      text: `Goal telemetry:\n${lines.join("\n")}`,
       nav: "/goals",
       spoken: "Goal telemetry on screen.",
       suggestions: ["open goals", "start focus 50"],
@@ -160,33 +182,31 @@ export function processCommand(raw: string): EngineResult {
   }
 
   /* -- automations --------------------------------------------------- */
-  if (/automation|routine/.test(lower)) {
+  if (/automation|routine/.test(lower) && /\b(my|show|list|status|which|open)\b/.test(lower)) {
     const autos = useAutomationStore.getState().automations;
-    const on = autos.filter((a) => a.enabled).length;
+    const on = autos.filter((a) => a.enabled);
     return {
-      text: `${on} of ${autos.length} automations are live: ${autos.filter((a) => a.enabled).map((a) => a.name).join(", ")}. The Project File Watcher is paused — it flagged 2 failing tests on its last run. Want me to re-enable it?`,
+      text:
+        `${on.length} of ${autos.length} automations are armed${on.length ? `: ${on.map((a) => a.name).join(", ")}` : ""}. ` +
+        "Describe a new one in plain English on the Automation screen — schedule and action are parsed automatically, and it will actually fire.",
       nav: "/automation",
-      suggestions: ["enable file watcher", "open automation"],
+      suggestions: ["open automation", "morning briefing"],
     };
-  }
-  if (/enable file watcher/.test(lower)) {
-    const store = useAutomationStore.getState();
-    const fw = store.automations.find((a) => a.id === "a4");
-    if (fw && !fw.enabled) store.toggle("a4");
-    return { text: "Project File Watcher re-engaged. I will run lint and the test suite on every save in ~/dev/alumni-system and report regressions to the console.", nav: "/automation", spoken: "File watcher enabled." };
   }
 
   /* -- status -------------------------------------------------------- */
-  if (/status|diagnostic|system/.test(lower)) {
+  if (/\b(system status|status report|diagnostics?|all systems)\b/.test(lower) || lower === "status") {
+    const autos = useAutomationStore.getState().automations.filter((a) => a.enabled).length;
+    const mems = useMemoryStore.getState().memories.length;
     return {
-      text: "All systems nominal. Core temperature stable, memory engine at 97% retrieval confidence, 5 automations on watch. Local model latency 41 ms; cloud reasoning link healthy. No anomalies in the last 24 hours.",
+      text: `All systems nominal, boss. ${autos} automation${autos === 1 ? "" : "s"} on watch, ${mems} memor${mems === 1 ? "y" : "ies"} indexed, voice pipeline armed. Local engine responding; anything I cannot handle escalates to cloud reasoning.`,
       spoken: "All systems nominal.",
       suggestions: ["morning briefing", "open analytics"],
     };
   }
 
-  /* -- error / debug pastes ------------------------------------------ */
-  if (/error|exception|failed|traceback|stack/i.test(lower) || /select\s+.*from/i.test(lower)) {
+  /* -- error / debug pastes (multi-line dumps and real signatures only) */
+  if (/\n/.test(input) && (/error|exception|failed|traceback|stack/i.test(lower) || /select\s+.*from/i.test(lower))) {
     return {
       text: "I recognize this failure signature — it matches the registration API fault in alumni-system. Routing it to the developer console: root cause isolated, offending line highlighted, corrected query prepared. Review the fix on the analysis panel.",
       nav: "/console",
@@ -197,15 +217,21 @@ export function processCommand(raw: string): EngineResult {
 
   /* -- greetings / fallback ------------------------------------------ */
   if (/^(hi|hello|hey|yo|jarvis|shaffa)\b/.test(lower)) {
+    const open = useTaskStore.getState().tasks.filter((t) => t.status !== "done").length;
     return {
-      text: "At your service, sir. Four items sit inside the 24-hour window and your DSA streak needs attention tonight. Where shall we begin?",
-      spoken: "At your service.",
-      suggestions: ["morning briefing", "what is due today", "open console"],
+      text:
+        open > 0
+          ? `At your service, boss. ${open} open item${open === 1 ? "" : "s"} on the board. Where shall we begin?`
+          : "At your service, boss. The board is clear — give me a task, a goal, or a question.",
+      spoken: "At your service, boss.",
+      suggestions: ["morning briefing", "what is due today", "add task: plan my week"],
     };
   }
 
+  /* -- no local intent → escalate to Claude -------------------------- */
   return {
-    text: `Understood — parsing “${input}”. I do not have a local tool bound to that phrase yet, so in production I would escalate it to the cloud reasoning model with your memory context attached. Meanwhile: try “add task …”, “start focus 50”, “morning briefing”, or paste an error for analysis.`,
+    fallback: true,
+    text: `Understood — parsing “${input}”. My cloud reasoning link is offline right now, so I could not take that further. Local commands still work: “add task …”, “start focus 50”, “morning briefing”, or paste an error for analysis.`,
     suggestions: ["morning briefing", "system status", "add task revise dp patterns"],
   };
 }

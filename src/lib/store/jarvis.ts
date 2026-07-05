@@ -1,8 +1,9 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { AppNotification, ChatMessage, CommandLogEntry, CoreState } from "@/lib/types";
-import { seedCommands, seedNotifications, uid } from "@/lib/data/seed";
+import { uid } from "@/lib/data/seed";
 import { processCommand } from "@/lib/ai/engine";
+import { askClaude } from "@/lib/ai/cloud";
 import { speak } from "@/lib/voice";
 
 interface JarvisState {
@@ -22,6 +23,7 @@ interface JarvisState {
   setWakeEnabled: (v: boolean) => void;
   setWakeWord: (w: string) => void;
   markAllRead: () => void;
+  addNotification: (n: AppNotification) => void;
   dismissNotification: (id: string) => void;
   submitCommand: (text: string, onNav?: (path: string) => void) => void;
 }
@@ -29,7 +31,7 @@ interface JarvisState {
 const GREETING: ChatMessage = {
   id: "boot",
   role: "jarvis",
-  text: "Systems online. Memory engine, task grid, and automation watch are all nominal. How can I help, sir?",
+  text: "Systems online, boss. Memory engine, task grid, and automation watch are all nominal. What are we doing today?",
   time: new Date().toISOString(),
 };
 
@@ -39,9 +41,9 @@ export const useJarvisStore = create<JarvisState>()(
   coreState: "idle",
   messages: [GREETING],
   streamText: "",
-  suggestions: ["morning briefing", "what is due today", "start focus 50"],
-  notifications: seedNotifications,
-  commandLog: seedCommands,
+  suggestions: ["morning briefing", "add task: plan my week", "start focus 50"],
+  notifications: [],
+  commandLog: [],
   voiceOutput: true,
   wakeEnabled: true,
   wakeWord: "shaffa",
@@ -52,6 +54,7 @@ export const useJarvisStore = create<JarvisState>()(
   setWakeWord: (wakeWord) => set({ wakeWord: wakeWord.toLowerCase().replace(/[^a-z ]/g, "") }),
   markAllRead: () =>
     set((s) => ({ notifications: s.notifications.map((n) => ({ ...n, read: true })) })),
+  addNotification: (n) => set((s) => ({ notifications: [n, ...s.notifications].slice(0, 30) })),
   dismissNotification: (id) =>
     set((s) => ({ notifications: s.notifications.filter((n) => n.id !== id) })),
 
@@ -65,14 +68,9 @@ export const useJarvisStore = create<JarvisState>()(
       messages: [...s.messages, { id: uid(), role: "user", text: input, time: new Date().toISOString() }],
     }));
 
-    // Reasoning latency, then stream the response token by token.
-    setTimeout(() => {
-      const result = processCommand(input);
-      if (result.nav && onNav) onNav(result.nav);
-
+    const streamOut = (text: string, suggestions?: string[]) => {
       set({ coreState: "responding" });
-
-      const words = result.text.split(/(\s+)/);
+      const words = text.split(/(\s+)/);
       let i = 0;
       const tick = setInterval(() => {
         i += 2;
@@ -82,18 +80,33 @@ export const useJarvisStore = create<JarvisState>()(
           set((s) => ({
             coreState: "idle",
             streamText: "",
-            suggestions: result.suggestions ?? s.suggestions,
-            messages: [...s.messages, { id: uid(), role: "jarvis", text: result.text, time: new Date().toISOString() }],
+            suggestions: suggestions ?? s.suggestions,
+            messages: [...s.messages, { id: uid(), role: "jarvis", text, time: new Date().toISOString() }],
             commandLog: [
-              { id: uid(), input, summary: result.text.replace(/\n/g, " ").slice(0, 72) + (result.text.length > 72 ? "…" : ""), time: new Date().toISOString() },
+              { id: uid(), input, summary: text.replace(/\n/g, " ").slice(0, 72) + (text.length > 72 ? "…" : ""), time: new Date().toISOString() },
               ...s.commandLog,
             ].slice(0, 20),
           }));
           // Read the full response aloud — SHAFFA is heard, not just seen.
-          if (get().voiceOutput) speak(result.text);
+          if (get().voiceOutput) speak(text);
         }
       }, 26);
-    }, 750 + Math.random() * 550);
+    };
+
+    // Local intent match first; anything unmatched escalates to Claude.
+    setTimeout(() => {
+      const result = processCommand(input);
+      if (result.nav && onNav) onNav(result.nav);
+
+      if (result.fallback) {
+        // history excludes the user message pushed above — askClaude appends it
+        askClaude(input, get().messages.slice(0, -1), onNav)
+          .then((answer) => streamOut(answer, ["morning briefing", "what is due today"]))
+          .catch(() => streamOut(result.text, result.suggestions));
+        return;
+      }
+      streamOut(result.text, result.suggestions);
+    }, 400 + Math.random() * 350);
   },
     }),
     {

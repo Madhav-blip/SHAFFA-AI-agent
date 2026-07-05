@@ -1,7 +1,38 @@
 "use client";
 
-import { motion } from "framer-motion";
-import { useId, type ReactNode } from "react";
+import { animate, motion, useMotionValue } from "framer-motion";
+import { useEffect, useId, useState, type ReactNode } from "react";
+
+/* ---------- Animated counter ---------- */
+
+export function CountUp({
+  value,
+  className = "",
+  suffix = "",
+  decimals = 0,
+}: {
+  value: number;
+  className?: string;
+  suffix?: string;
+  decimals?: number;
+}) {
+  const mv = useMotionValue(0);
+  const [text, setText] = useState("0");
+  useEffect(() => {
+    const controls = animate(mv, value, {
+      duration: 1.1,
+      ease: [0.22, 1, 0.36, 1],
+      onUpdate: (v) => setText(v.toFixed(decimals)),
+    });
+    return () => controls.stop();
+  }, [value, decimals, mv]);
+  return (
+    <span className={className}>
+      {text}
+      {suffix}
+    </span>
+  );
+}
 
 /* ---------- Progress ring ---------- */
 

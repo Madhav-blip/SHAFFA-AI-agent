@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
-  AlarmClock, Check, FolderKanban, Link2, Pencil, Plus, Search, SlidersHorizontal, StickyNote, Target, Trash2,
+  AlarmClock, Check, CloudDownload, FolderKanban, Link2, Pencil, Plus, Search, SlidersHorizontal, StickyNote, Target, Trash2,
 } from "lucide-react";
 import { GlassCard, PageTransition, relTime } from "@/components/ui/primitives";
 import { scoreMemory, useMemoryStore } from "@/lib/store/memory";
@@ -120,9 +120,62 @@ function MemoryCard({
   );
 }
 
+function ImportPanel({ onClose }: { onClose: () => void }) {
+  const importText = useMemoryStore((s) => s.importText);
+  const [raw, setRaw] = useState("");
+  const [imported, setImported] = useState<number | null>(null);
+
+  return (
+    <motion.div
+      initial={{ height: 0, opacity: 0 }}
+      animate={{ height: "auto", opacity: 1 }}
+      exit={{ height: 0, opacity: 0 }}
+      className="overflow-hidden"
+    >
+      <GlassCard hover={false} className="p-4">
+        <div className="hud-label mb-2 !text-cyan-200/70">Import from Claude</div>
+        <p className="mb-3 text-[13px] leading-relaxed text-dim">
+          Claude&apos;s memory has no export API, so bring it over yourself: in the Claude app ask{" "}
+          <span className="text-cyan-200">&ldquo;List everything you remember about me as short bullet points&rdquo;</span>, copy the
+          answer, and paste it below. Each line becomes a memory card — typed, tagged and searchable alongside everything SHAFFA learns here.
+        </p>
+        <textarea
+          value={raw}
+          onChange={(e) => setRaw(e.target.value)}
+          rows={6}
+          placeholder={"- Prefers studying at night\n- Working toward a 20 LPA placement\n- Building an alumni management system\n…"}
+          className="w-full resize-none rounded-xl border border-line/70 bg-void/60 p-3 font-mono text-[12.5px] leading-relaxed text-icy transition-all placeholder:text-ghost focus:border-cyan-400/50"
+          spellCheck={false}
+        />
+        <div className="mt-2.5 flex items-center gap-2">
+          <button
+            onClick={() => {
+              const n = importText(raw, "claude-import");
+              setImported(n);
+              setRaw("");
+              if (n > 0) setTimeout(onClose, 1600);
+            }}
+            disabled={!raw.trim()}
+            className="flex cursor-pointer items-center gap-2 rounded-lg border border-cyan-400/50 bg-cyan-400/10 px-4 py-1.5 text-[13px] text-cyan-100 transition-all hover:bg-cyan-400/20 hover:shadow-[0_0_16px_rgba(0,229,255,0.3)] disabled:opacity-40"
+          >
+            <CloudDownload size={13} /> Import
+          </button>
+          <button onClick={onClose} className="chip">cancel</button>
+          {imported !== null && (
+            <span className="text-[13px] text-emerald-300">
+              {imported > 0 ? `${imported} memories absorbed ✓` : "Nothing importable found — paste one item per line."}
+            </span>
+          )}
+        </div>
+      </GlassCard>
+    </motion.div>
+  );
+}
+
 export default function MemoryScreen() {
   const { memories, query, typeFilter, setQuery, setTypeFilter, addMemory } = useMemoryStore();
   const [focusId, setFocusId] = useState<string | null>(null);
+  const [importing, setImporting] = useState(false);
 
   const results = useMemo(() => {
     return memories
@@ -145,15 +198,25 @@ export default function MemoryScreen() {
           <h1 className="font-display text-[18px] tracking-[0.22em] text-cyan-50 uppercase" style={{ textShadow: "0 0 18px rgba(0,229,255,0.35)" }}>
             Memory Engine
           </h1>
-          <p className="mt-1 text-[13px] text-dim">{memories.length} memories indexed · vector store synced · connections rebuilt nightly</p>
+          <p className="mt-1 text-[13px] text-dim">{memories.length} memor{memories.length === 1 ? "y" : "ies"} indexed · persisted locally · say “remember that …” to add by voice</p>
         </div>
-        <button
-          onClick={() => addMemory({ id: uid(), type: "note", title: "New memory", content: "Describe what SHAFFA should remember…", tags: ["new"], connections: [], strength: 0.5, updatedAt: new Date().toISOString() })}
-          className="flex cursor-pointer items-center gap-2 rounded-lg border border-cyan-400/50 bg-cyan-400/10 px-3.5 py-2 text-[13px] text-cyan-100 transition-all hover:bg-cyan-400/20 hover:shadow-[0_0_16px_rgba(0,229,255,0.3)]"
-        >
-          <Plus size={14} /> Add memory
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setImporting(!importing)}
+            className="flex cursor-pointer items-center gap-2 rounded-lg border border-violet-400/50 bg-violet-400/10 px-3.5 py-2 text-[13px] text-violet-100 transition-all hover:bg-violet-400/20 hover:shadow-[0_0_16px_rgba(167,139,250,0.3)]"
+          >
+            <CloudDownload size={14} /> Import from Claude
+          </button>
+          <button
+            onClick={() => addMemory({ id: uid(), type: "note", title: "New memory", content: "Describe what SHAFFA should remember…", tags: ["new"], connections: [], strength: 0.5, updatedAt: new Date().toISOString() })}
+            className="flex cursor-pointer items-center gap-2 rounded-lg border border-cyan-400/50 bg-cyan-400/10 px-3.5 py-2 text-[13px] text-cyan-100 transition-all hover:bg-cyan-400/20 hover:shadow-[0_0_16px_rgba(0,229,255,0.3)]"
+          >
+            <Plus size={14} /> Add memory
+          </button>
+        </div>
       </header>
+
+      <AnimatePresence>{importing && <ImportPanel onClose={() => setImporting(false)} />}</AnimatePresence>
 
       <GlassCard hover={false} className="flex flex-wrap items-center gap-3 p-3">
         <div className="flex min-w-56 flex-1 items-center gap-2 rounded-lg border border-line/70 bg-void/50 px-3 py-2 transition-all focus-within:border-cyan-400/50 focus-within:shadow-[0_0_16px_rgba(0,229,255,0.1)]">
@@ -183,7 +246,18 @@ export default function MemoryScreen() {
         </AnimatePresence>
       </motion.div>
       {results.length === 0 && (
-        <div className="py-16 text-center text-dim">No memories match that query. The engine would fall back to fuzzy vector search in production.</div>
+        <div className="flex flex-col items-center gap-3 py-16 text-center">
+          <p className="max-w-md text-[14px] leading-relaxed text-dim">
+            {memories.length === 0
+              ? "Memory is empty. Tell SHAFFA “remember that …”, add one manually, or import everything Claude already knows about you."
+              : "No memories match that query."}
+          </p>
+          {memories.length === 0 && (
+            <button onClick={() => setImporting(true)} className="chip !px-4 !py-1.5 !text-[13px]">
+              <CloudDownload size={13} /> Import from Claude
+            </button>
+          )}
+        </div>
       )}
     </PageTransition>
   );

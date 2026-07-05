@@ -4,12 +4,13 @@ import { useEffect, useState } from "react";
 import { Pause, Play, TimerReset } from "lucide-react";
 import { GlassCard, PanelHeader } from "@/components/ui/primitives";
 import { ProgressRing } from "@/components/ui/charts";
-import { useFocusStore } from "@/lib/store/focus";
+import { sessionsOn, todayKey, useFocusStore } from "@/lib/store/focus";
 
 const PRESETS = [25, 50, 90];
 
 export default function FocusTimer() {
-  const { endsAt, minutes, sessionsToday, start, stop } = useFocusStore();
+  const { endsAt, minutes, sessions, start, stop } = useFocusStore();
+  const sessionsToday = sessionsOn(sessions, todayKey()).length;
   const [now, setNow] = useState(() => Date.now());
   const [preset, setPreset] = useState(50);
 
