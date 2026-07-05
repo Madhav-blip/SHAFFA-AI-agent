@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { Ear, Mic, Send, Zap } from "lucide-react";
 import { useJarvisStore } from "@/lib/store/jarvis";
-import { speak } from "@/lib/voice";
+import { speak, primeVoice, micMuted } from "@/lib/voice";
 
 const SHORTCUTS = [
   "morning briefing",
@@ -120,6 +120,18 @@ export default function CommandBar() {
 
   useEffect(() => setMounted(true), []);
 
+  // Unlock TTS on the very first interaction anywhere (autoplay policy),
+  // so spoken replies work even when wake mode is off.
+  useEffect(() => {
+    const prime = () => primeVoice();
+    window.addEventListener("pointerdown", prime, { once: true });
+    window.addEventListener("keydown", prime, { once: true });
+    return () => {
+      window.removeEventListener("pointerdown", prime);
+      window.removeEventListener("keydown", prime);
+    };
+  }, []);
+
   // "/" focuses the command line from anywhere
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -164,9 +176,6 @@ export default function CommandBar() {
   useEffect(() => {
     if (!wakeEnabled) return;
 
-    const speaking = () =>
-      "speechSynthesis" in window && window.speechSynthesis.speaking;
-
     let stopped = false;
     let started = false;
     let rec: SpeechRecognitionLike | null = null;
@@ -192,8 +201,9 @@ export default function CommandBar() {
 
         const state = useJarvisStore.getState().coreState;
         // Ignore anything heard while SHAFFA is thinking or reading a
-        // response aloud (avoids capturing its own TTS output).
-        if (state === "processing" || state === "responding" || speaking()) return;
+        // response aloud. micMuted() is a bounded time window set by speak(),
+        // so a misbehaving TTS engine can never permanently deafen the mic.
+        if (state === "processing" || state === "responding" || micMuted()) return;
 
         const hit = matchWake(transcript, wakeWord.trim().toLowerCase() || "shaffa");
         if (process.env.NODE_ENV !== "production") {
@@ -257,7 +267,7 @@ export default function CommandBar() {
           }
           const now = performance.now();
           // A clap is a sharp, loud transient; three inside 1.8s arms SHAFFA.
-          if (peak > 0.6 && now - lastPeakAt > 150 && !speaking()) {
+          if (peak > 0.6 && now - lastPeakAt > 150 && !micMuted()) {
             lastPeakAt = now;
             claps = claps.filter((t) => now - t < 1800);
             claps.push(now);
@@ -286,10 +296,12 @@ export default function CommandBar() {
     // penalize that. Start immediately only when the mic is already granted;
     // otherwise arm on the first user gesture (which lets the prompt show).
     const gestureStart = () => {
+      primeVoice(); // unlock TTS inside a user gesture (autoplay policy)
       audioCtx?.resume().catch(() => {});
       startAll();
     };
     window.addEventListener("pointerdown", gestureStart);
+    window.addEventListener("keydown", gestureStart);
 
     (async () => {
       try {
@@ -303,6 +315,7 @@ export default function CommandBar() {
     return () => {
       stopped = true;
       window.removeEventListener("pointerdown", gestureStart);
+      window.removeEventListener("keydown", gestureStart);
       if (rec) {
         rec.onend = null;
         try { rec.stop(); } catch { /* already stopped */ }
