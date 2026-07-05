@@ -9,6 +9,7 @@ import Particles from "@/components/shell/Particles";
 import BootSequence from "@/components/shell/BootSequence";
 import { useJarvisStore } from "@/lib/store/jarvis";
 import { tickAutomations } from "@/lib/automation/runner";
+import { voiceReport } from "@/lib/voice";
 
 /** Full-screen blue glow while SHAFFA is listening. */
 function ListeningFrame() {
@@ -42,7 +43,10 @@ export default function AppShell({ children }: { children: ReactNode }) {
   useEffect(() => {
     setMounted(true);
     if (process.env.NODE_ENV === "development") {
-      (window as unknown as { __shaffa?: typeof useJarvisStore }).__shaffa = useJarvisStore;
+      const w = window as unknown as { __shaffa?: typeof useJarvisStore; __voices?: () => unknown };
+      w.__shaffa = useJarvisStore;
+      // Run __voices() in the console to see your browser's speech voices.
+      w.__voices = () => voiceReport();
     }
   }, []);
 
