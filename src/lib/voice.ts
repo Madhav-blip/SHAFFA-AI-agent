@@ -29,11 +29,15 @@ function score(v: SpeechSynthesisVoice): number {
   const name = v.name.toLowerCase();
   const lang = v.lang.toLowerCase();
   let s = 0;
+  // Local (offline) voices are the ones that reliably produce audio. Network
+  // voices like "Google … Female" throw synthesis-failed without connectivity,
+  // so they must never outrank a working local voice.
+  if (v.localService) s += 12;
+  else s -= 8;
   if (name.includes("female")) s += 9;
   if (name.includes("male") && !name.includes("female")) s -= 9;
   if (FEMALE_NAMES.some((f) => name.includes(f))) s += 7;
-  if (name.includes("natural") || name.includes("online")) s += 3; // neural voices are far clearer
-  if (name.includes("google")) s += 3;
+  if (name.includes("natural") || name.includes("neural")) s += 4; // clearer, still local on Win11
   if (lang.startsWith("en-in")) s += 4;
   else if (lang.startsWith("en-gb") || lang.startsWith("en-us")) s += 3;
   else if (lang.startsWith("en")) s += 1;
@@ -81,18 +85,20 @@ export function primeVoice(): void {
   }
 }
 
-function utter(synth: SpeechSynthesis, text: string): void {
+function utter(synth: SpeechSynthesis, text: string, useDefaultVoice = false): void {
   const words = text.split(/\s+/).length;
   try {
-    synth.cancel();
+    if (synth.speaking || synth.pending) synth.cancel();
     const u = new SpeechSynthesisUtterance(text);
-    const voice = pickVoice();
+    // First attempt uses the scored (local, female) voice; a retry drops the
+    // explicit voice so the browser falls back to its guaranteed default.
+    const voice = useDefaultVoice ? null : pickVoice();
     if (voice) {
       u.voice = voice;
       u.lang = voice.lang;
     }
     u.rate = 1.0; // unhurried and clear
-    u.pitch = 1.12; // a touch brighter
+    u.pitch = 1.1; // a touch brighter
     u.volume = 1;
     // Mute the mic only while audio is actually playing. If TTS never starts
     // (no OS voice / blocked), onstart won't fire and the short bridge below
@@ -104,6 +110,16 @@ function utter(synth: SpeechSynthesis, text: string): void {
       muteUntil = Math.min(muteUntil, Date.now() + 250);
     };
     u.onerror = (e) => {
+      // "interrupted"/"canceled" are benign — they fire when we replace one
+      // utterance with the next. Only real failures matter.
+      if (e.error === "interrupted" || e.error === "canceled") return;
+      if (e.error === "synthesis-failed" && !useDefaultVoice) {
+        // The selected voice can't synthesize (often a network voice offline).
+        // Retry once with the browser's default local voice.
+        cached = null;
+        setTimeout(() => utter(synth, text, true), 60);
+        return;
+      }
       muteUntil = 0;
       if (process.env.NODE_ENV !== "production") console.warn("[shaffa tts] error:", e.error);
     };
@@ -115,6 +131,18 @@ function utter(synth: SpeechSynthesis, text: string): void {
   } catch {
     muteUntil = 0;
   }
+}
+
+/** Diagnostics: list the voices the browser exposes and which one we pick. */
+export function voiceReport(): { picked: string | null; total: number; voices: string[] } {
+  if (typeof window === "undefined" || !("speechSynthesis" in window)) return { picked: null, total: 0, voices: [] };
+  const voices = window.speechSynthesis.getVoices();
+  const picked = pickVoice();
+  return {
+    picked: picked ? `${picked.name} (${picked.lang}, ${picked.localService ? "local" : "network"})` : null,
+    total: voices.length,
+    voices: voices.map((v) => `${v.name} [${v.lang}${v.localService ? "" : ", network"}]`),
+  };
 }
 
 export function speak(text: string): void {
