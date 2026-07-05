@@ -2,8 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Bell, Settings, X } from "lucide-react";
+import { Bell, Settings, Volume2, X } from "lucide-react";
 import { useJarvisStore } from "@/lib/store/jarvis";
+import { speak, primeVoice } from "@/lib/voice";
 import { NeonSwitch, relTime } from "@/components/ui/primitives";
 import type { CoreState } from "@/lib/types";
 
@@ -172,6 +173,15 @@ export default function TopBar() {
                     </div>
                     <NeonSwitch on={voiceOutput} onToggle={() => setVoiceOutput(!voiceOutput)} />
                   </div>
+                  <button
+                    onClick={() => { primeVoice(); speak("Voice online, boss. This is my speaking voice."); }}
+                    className="mt-2 flex w-full cursor-pointer items-center justify-center gap-2 rounded-lg border border-cyan-400/40 bg-cyan-400/8 px-3 py-1.5 text-[12.5px] text-cyan-200 transition-all hover:bg-cyan-400/15 hover:shadow-[0_0_14px_rgba(0,229,255,0.2)]"
+                  >
+                    <Volume2 size={13} /> Test voice
+                  </button>
+                  <p className="mt-1.5 text-[11px] leading-snug text-ghost">
+                    No sound? Your OS may lack a speech voice — install one under Windows Settings → Time &amp; Language → Speech.
+                  </p>
 
                   <div className="mt-3 flex items-center justify-between border-t border-line/60 pt-3">
                     <div>
@@ -195,8 +205,8 @@ export default function TopBar() {
                   </p>
 
                   <div className="mt-4 border-t border-line/60 pt-3 text-[12px] leading-relaxed text-dim">
-                    Core build <span className="text-cyan-300">v4.2.1</span> · local engine active · cloud reasoning link configured in{" "}
-                    <span className="font-mono text-[11px]">server/.env</span>
+                    Core build <span className="text-cyan-300">v4.2.1</span> · local engine active · cloud reasoning key in{" "}
+                    <span className="font-mono text-[11px]">.env.local</span>
                   </div>
                 </motion.div>
               </>
