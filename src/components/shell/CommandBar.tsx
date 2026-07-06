@@ -15,11 +15,47 @@ const SHORTCUTS = [
   "system status",
 ];
 
+/** Quick spoken acknowledgements — rotated so she sounds like a person. */
+const QUICK_ACKS = [
+  "Yes?",
+  "Go ahead.",
+  "Listening.",
+  "Yes, boss?",
+  "Madhav?",
+  "Yes sir?",
+  "I'm here.",
+  "What do you need?",
+];
+
+/** Phrases that are SHAFFA's own voice — never treat their echo as a command. */
+const ECHO_PHRASES = new Set(
+  ["hello boss", "hello boss welcome back", "welcome back", ...QUICK_ACKS].map((p) =>
+    p.toLowerCase().replace(/[^a-z\s]/g, "").trim(),
+  ),
+);
+
+const isEcho = (transcript: string): boolean =>
+  ECHO_PHRASES.has(transcript.toLowerCase().replace(/[^a-z\s]/g, "").replace(/\s+/g, " ").trim());
+
+interface SRAlternative {
+  transcript: string;
+}
+interface SRResult {
+  isFinal: boolean;
+  length: number;
+  [index: number]: SRAlternative;
+}
+interface SREvent {
+  resultIndex: number;
+  results: { length: number; [index: number]: SRResult };
+}
+
 interface SpeechRecognitionLike {
   lang: string;
   continuous: boolean;
   interimResults: boolean;
-  onresult: ((e: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null;
+  maxAlternatives: number;
+  onresult: ((e: SREvent) => void) | null;
   onend: (() => void) | null;
   onerror: ((e?: { error?: string }) => void) | null;
   start: () => void;
@@ -58,21 +94,24 @@ function levenshtein(a: string, b: string): number {
 }
 
 /** Realistic STT mishearings of "shaffa" — speech engines rarely spell a
- * made-up name literally; they snap to nearby real words. */
+ * made-up name literally; they snap to nearby real words. Includes the
+ * words Indian-accent English commonly resolves to. */
 const SHAFFA_VARIANTS = [
-  "shaffa", "shafa", "shava", "sofa", "sofia", "sophia", "shofa", "shaefa",
-  "shaffer", "shafer", "chaffa",
+  "shaffa", "shafa", "shava", "shiva", "sheva", "sheffa", "shefa",
+  "sofa", "sofia", "sophia", "shofa", "shaefa",
+  "shaffer", "shafer", "chaffa", "shabba",
 ];
 
 /**
  * Edit-distance budget for a candidate token. Distance 2 is allowed only
- * when the token already sounds like a wake attempt (sh/ch/j onset, vowel
- * ending, same first letter as the target); everyday words ("shift",
- * "staff", "shall", "save", "java") stay at distance 1, which none survive.
+ * when the token already sounds like a wake attempt: sh/ch/j onset, an
+ * "-a" ending (every realistic mishearing of "shaffa" ends in -a), and the
+ * same first letter as the target. Everyday words ("shift", "staff",
+ * "shall", "shape", "java") stay at distance 1, which none survive.
  */
 function tolerance(token: string, target: string): number {
   if (token.length < 4) return 0;
-  return /^(sh|ch|j)/.test(token) && /[aeiou]$/.test(token) && token[0] === target[0] ? 2 : 1;
+  return /^(sh|ch|j)/.test(token) && token.endsWith("a") && token[0] === target[0] ? 2 : 1;
 }
 
 /**
@@ -158,7 +197,7 @@ export default function CommandBar() {
     awaitTimerRef.current = setTimeout(() => {
       awaitingRef.current = false;
       if (useJarvisStore.getState().coreState === "listening") setCoreState("idle");
-    }, 8000);
+    }, 10_000);
   };
 
   const disarmAwait = () => {
@@ -167,9 +206,19 @@ export default function CommandBar() {
     if (useJarvisStore.getState().coreState === "listening") setCoreState("idle");
   };
 
-  /** Spoken acknowledgement when SHAFFA wakes via voice or clap. */
+  /** Spoken acknowledgement when SHAFFA wakes via voice or clap.
+   * Full "hello boss" only after a long absence — otherwise she answers
+   * like a person who's already in the room. */
   const greet = () => {
-    if (useJarvisStore.getState().voiceOutput) speak("Hello boss.");
+    const st = useJarvisStore.getState();
+    st.touch();
+    if (!st.voiceOutput) return;
+    const awayMs = Date.now() - (st.lastInteractionAt || 0);
+    if (st.lastInteractionAt === 0 || awayMs > 3 * 3_600_000) {
+      speak("Hello boss. Welcome back.");
+      return;
+    }
+    speak(QUICK_ACKS[Math.floor(Math.random() * QUICK_ACKS.length)]);
   };
 
   /* ---------- Wake mode: background speech recognition + clap trigger ---------- */
@@ -192,36 +241,57 @@ export default function CommandBar() {
       rec = new Ctor();
       rec.lang = "en-IN";
       rec.continuous = true;
-      rec.interimResults = false;
+      // Interim results + n-best alternatives: react the instant a wake word
+      // is heard, and check the engine's 2nd/3rd guesses too — with accents
+      // the right word is often not the top alternative.
+      rec.interimResults = true;
+      rec.maxAlternatives = 4;
 
       rec.onresult = (e) => {
-        const last = e.results[e.results.length - 1];
-        const transcript = (last?.[0]?.transcript ?? "").trim();
-        if (!transcript) return;
-
         const state = useJarvisStore.getState().coreState;
         // Ignore anything heard while SHAFFA is thinking or reading a
         // response aloud. micMuted() is a bounded time window set by speak(),
         // so a misbehaving TTS engine can never permanently deafen the mic.
         if (state === "processing" || state === "responding" || micMuted()) return;
 
-        const hit = matchWake(transcript, wakeWord.trim().toLowerCase() || "shaffa");
-        if (process.env.NODE_ENV !== "production") {
-          console.debug("[shaffa stt]", transcript, hit ? "→ wake" : "");
-        }
-        if (hit) {
-          if (hit.command) {
-            disarmAwait();
-            run(hit.command);
-          } else {
-            armAwait(); // bare "hey shaffa" — wait for the follow-up
-            greet();
+        const wake = wakeWord.trim().toLowerCase() || "shaffa";
+
+        for (let ri = e.resultIndex; ri < e.results.length; ri++) {
+          const result = e.results[ri];
+          const primary = (result[0]?.transcript ?? "").trim();
+          if (!primary) continue;
+          if (process.env.NODE_ENV !== "production") {
+            console.debug("[shaffa stt]", result.isFinal ? "final:" : "interim:", primary);
           }
-        } else if (awaitingRef.current) {
-          // Drop the echo of SHAFFA's own greeting if the mic caught it.
-          if (transcript.toLowerCase().includes("hello boss")) return;
-          disarmAwait();
-          run(transcript);
+
+          // Scan every alternative for a wake hit.
+          let hit: { command: string } | null = null;
+          for (let ai = 0; ai < Math.min(result.length, 4) && !hit; ai++) {
+            const alt = (result[ai]?.transcript ?? "").trim();
+            if (alt) hit = matchWake(alt, wake);
+          }
+
+          if (hit) {
+            if (hit.command && result.isFinal) {
+              // full "hey shaffa <command>" — execute
+              disarmAwait();
+              run(hit.command);
+              return;
+            }
+            // Wake word heard (interim or bare final) — open the window NOW.
+            const fresh = !awaitingRef.current;
+            armAwait();
+            if (fresh && !hit.command) greet();
+            continue;
+          }
+
+          // Inside the command window: run the first final utterance.
+          if (awaitingRef.current && result.isFinal) {
+            if (isEcho(primary)) continue;
+            disarmAwait();
+            run(primary);
+            return;
+          }
         }
       };
 
@@ -267,7 +337,7 @@ export default function CommandBar() {
           }
           const now = performance.now();
           // A clap is a sharp, loud transient; three inside 1.8s arms SHAFFA.
-          if (peak > 0.6 && now - lastPeakAt > 150 && !micMuted()) {
+          if (peak > 0.52 && now - lastPeakAt > 140 && !micMuted()) {
             lastPeakAt = now;
             claps = claps.filter((t) => now - t < 1800);
             claps.push(now);

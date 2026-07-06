@@ -18,6 +18,9 @@ interface JarvisState {
   /** hands-free wake word mode ("Hey Shaffa …") */
   wakeEnabled: boolean;
   wakeWord: string;
+  /** epoch ms of the last interaction — drives welcome-back vs quick greetings */
+  lastInteractionAt: number;
+  touch: () => void;
   setCoreState: (s: CoreState) => void;
   setVoiceOutput: (v: boolean) => void;
   setWakeEnabled: (v: boolean) => void;
@@ -47,7 +50,9 @@ export const useJarvisStore = create<JarvisState>()(
   voiceOutput: true,
   wakeEnabled: true,
   wakeWord: "shaffa",
+  lastInteractionAt: 0,
 
+  touch: () => set({ lastInteractionAt: Date.now() }),
   setCoreState: (coreState) => set({ coreState }),
   setVoiceOutput: (voiceOutput) => set({ voiceOutput }),
   setWakeEnabled: (wakeEnabled) => set({ wakeEnabled }),
@@ -65,15 +70,18 @@ export const useJarvisStore = create<JarvisState>()(
     set((s) => ({
       coreState: "processing",
       streamText: "",
+      lastInteractionAt: Date.now(),
       messages: [...s.messages, { id: uid(), role: "user", text: input, time: new Date().toISOString() }],
     }));
 
     const streamOut = (text: string, suggestions?: string[]) => {
       set({ coreState: "responding" });
+      // Speak immediately — the voice should never wait for the text animation.
+      if (get().voiceOutput) speak(text);
       const words = text.split(/(\s+)/);
       let i = 0;
       const tick = setInterval(() => {
-        i += 2;
+        i += 4;
         set({ streamText: words.slice(0, i).join("") });
         if (i >= words.length) {
           clearInterval(tick);
@@ -87,13 +95,12 @@ export const useJarvisStore = create<JarvisState>()(
               ...s.commandLog,
             ].slice(0, 20),
           }));
-          // Read the full response aloud — SHAFFA is heard, not just seen.
-          if (get().voiceOutput) speak(text);
         }
-      }, 26);
+      }, 16);
     };
 
     // Local intent match first; anything unmatched escalates to Claude.
+    // Minimal think-delay — responsiveness beats theatre.
     setTimeout(() => {
       const result = processCommand(input);
       if (result.nav && onNav) onNav(result.nav);
@@ -106,13 +113,13 @@ export const useJarvisStore = create<JarvisState>()(
         return;
       }
       streamOut(result.text, result.suggestions);
-    }, 400 + Math.random() * 350);
+    }, 120);
   },
     }),
     {
       // Fresh key so the new voice-first defaults apply over old saved settings.
       name: "shaffa-settings",
-      partialize: (s) => ({ voiceOutput: s.voiceOutput, wakeEnabled: s.wakeEnabled, wakeWord: s.wakeWord }),
+      partialize: (s) => ({ voiceOutput: s.voiceOutput, wakeEnabled: s.wakeEnabled, wakeWord: s.wakeWord, lastInteractionAt: s.lastInteractionAt }),
     },
   ),
 );
