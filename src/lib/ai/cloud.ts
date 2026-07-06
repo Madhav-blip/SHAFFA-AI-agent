@@ -17,8 +17,7 @@ const SCREEN_PATHS: Record<string, string> = {
   console: "/console", automation: "/automation", analytics: "/analytics",
 };
 
-export const NO_KEY_MESSAGE =
-  "Boss, my cloud reasoning link is not configured yet. Create a file named .env.local in the project root with ANTHROPIC_API_KEY=your key from console.anthropic.com, restart the dev server, and I will be able to answer anything. Local commands — tasks, focus, briefings, memory — still work meanwhile.";
+export const NO_KEY_MESSAGE = "No API key added for external commands.";
 
 interface ContentBlock {
   type: string;
@@ -174,7 +173,7 @@ export async function askClaude(
 
     if (res.status === 503) return NO_KEY_MESSAGE;
     if (!res.ok) {
-      return "Boss, the cloud reasoning call failed — the API returned an error. Check the key and credits at console.anthropic.com, then try me again.";
+      return "Cloud call failed — check the API key and credits.";
     }
 
     const data: { content: ContentBlock[]; stop_reason: string } = await res.json();

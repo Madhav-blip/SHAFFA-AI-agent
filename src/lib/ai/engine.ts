@@ -12,12 +12,6 @@ import { uid, daysFromNow } from "@/lib/data/seed";
  * are resolved by tool-calling, and unresolved input falls through to the LLM.
  */
 
-const NAV_TARGETS: Record<string, string> = {
-  dashboard: "/", home: "/", memory: "/memory", tasks: "/tasks", task: "/tasks",
-  goals: "/goals", goal: "/goals", console: "/console", developer: "/console",
-  automation: "/automation", automations: "/automation", analytics: "/analytics",
-};
-
 export function guessCategory(title: string): Category {
   return CATEGORY_HINTS.find(([re]) => re.test(title))?.[1] ?? "Personal";
 }
@@ -37,6 +31,31 @@ function fmtDue(iso?: string): string {
   return `in ${d} days`;
 }
 
+/* Screen aliases + any movement-ish verb → phrasing-agnostic navigation.
+ * "take me to memory", "pull up my tasks", "lemme see the stats" all work. */
+const SCREEN_ALIASES: [RegExp, string, string][] = [
+  [/\bdashboard\b|\bhome\b|main screen/, "/", "dashboard"],
+  [/\bmemor(y|ies)\b/, "/memory", "memory"],
+  [/\btasks?\b|\bboard\b|\bkanban\b|to.?do/, "/tasks", "task grid"],
+  [/\bgoals?\b/, "/goals", "goals"],
+  [/\bconsole\b|\bterminal\b|\bdev\b|\bcode\b/, "/console", "developer console"],
+  [/\bautomations?\b|\broutines?\b/, "/automation", "automation center"],
+  [/\banalytics\b|\bstats\b|\bcharts?\b|\btelemetry\b|\binsights?\b/, "/analytics", "analytics"],
+];
+
+const NAV_VERB =
+  /\b(open|show|go|goto|take|bring|navigate|pull|launch|switch|see|view|visit|display|check|jump|head|lemme|gimme)\b/;
+
+function resolveNav(lower: string): { nav: string; label: string } | null {
+  const wordCount = lower.split(/\s+/).filter(Boolean).length;
+  // Either a movement verb anywhere, or a bare screen name ("memory").
+  if (!NAV_VERB.test(lower) && wordCount > 2) return null;
+  for (const [re, nav, label] of SCREEN_ALIASES) {
+    if (re.test(lower)) return { nav, label };
+  }
+  return null;
+}
+
 export function processCommand(raw: string): EngineResult {
   let input = raw.trim();
   // Strip a leading wake phrase ("hey shaffa …", "jarvis, …") so the rest
@@ -44,18 +63,6 @@ export function processCommand(raw: string): EngineResult {
   const wake = input.match(/^(?:hey|ok|okay)?[\s,]*(?:jarvis|shaffa)\b[\s,!.]*/i);
   if (wake && wake[0].length < input.length) input = input.slice(wake[0].length);
   const lower = input.toLowerCase();
-
-  /* -- navigation ------------------------------------------------- */
-  const navMatch = lower.match(/^(open|show|go to|goto|switch to)\s+(the\s+)?(\w+)/);
-  if (navMatch && NAV_TARGETS[navMatch[3]] !== undefined) {
-    const target = navMatch[3];
-    return {
-      text: `Bringing up the ${target === "console" || target === "developer" ? "developer console" : target} view now, sir.`,
-      nav: NAV_TARGETS[target],
-      spoken: `Opening ${target}.`,
-      suggestions: ["morning briefing", "system status", "start focus 50"],
-    };
-  }
 
   /* -- add task ---------------------------------------------------- */
   const addMatch = input.match(/^(add|create|new)\s+(a\s+)?task:?\s+(.+)/i) ?? input.match(/^remind me to\s+(.+)/i);
@@ -108,6 +115,17 @@ export function processCommand(raw: string): EngineResult {
   if (/^(stop|end|cancel)\s+(the\s+)?focus/.test(lower)) {
     useFocusStore.getState().stop(false);
     return { text: "Focus session ended. Notifications restored. The partial block has been logged.", spoken: "Focus ended." };
+  }
+
+  /* -- navigation — phrasing-agnostic ------------------------------ */
+  const navHit = resolveNav(lower);
+  if (navHit) {
+    return {
+      text: `Taking you to ${navHit.label}, boss.`,
+      nav: navHit.nav,
+      spoken: `Opening ${navHit.label}.`,
+      suggestions: ["morning briefing", "system status", "start focus 50"],
+    };
   }
 
   /* -- due today / briefing ---------------------------------------- */
@@ -231,7 +249,7 @@ export function processCommand(raw: string): EngineResult {
   /* -- no local intent → escalate to Claude -------------------------- */
   return {
     fallback: true,
-    text: `Understood — parsing “${input}”. My cloud reasoning link is offline right now, so I could not take that further. Local commands still work: “add task …”, “start focus 50”, “morning briefing”, or paste an error for analysis.`,
+    text: "Cloud link unreachable — local commands still work, boss.",
     suggestions: ["morning briefing", "system status", "add task revise dp patterns"],
   };
 }
